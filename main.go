@@ -8,21 +8,33 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+type RedisConfig struct {
+	host string
+	port string
+}
+
 func main() {
 	ctx := context.Background()
 
-	address := "localhost:16379"
-	redis := NewRedis(address)
+	redisCfg := RedisConfig{
+		host: "localhost",
+		port: "16379",
+	}
+	redis, err := NewRedis(ctx, redisCfg)
+	if err != nil {
+		fmt.Printf("Error connecting redis: %v\n", err)
+		return
+	}
 
 	key := "example_key"
 	value := "example_value"
 
-	if err := Set(redis, ctx, key, value, 0); err != nil {
-		fmt.Printf("failed setting value: %v\n", err)
+	if err := redis.Set(ctx, key, value, 0); err != nil {
+		fmt.Printf("Error setting value: %v\n", err)
 		return
 	}
 
-	result, err := Get(redis, ctx, key)
+	result, err := redis.Get(ctx, key)
 	if err != nil {
 		fmt.Printf("Error getting value: %v\n", err)
 		return
@@ -31,24 +43,35 @@ func main() {
 	fmt.Printf("Result: %v\n", result)
 }
 
-func NewRedis(addr string) *redis.Client {
-	return redis.NewClient(&redis.Options{
+type Redis struct {
+	client *redis.Client
+}
+
+func NewRedis(ctx context.Context, cfg RedisConfig) (*Redis, error) {
+	addr := fmt.Sprintf("%s:%s", cfg.host, cfg.port)
+	client := redis.NewClient(&redis.Options{
 		Addr:     addr,
 		Password: "", // no password set
 		DB:       0,  // use default DB
 		PoolSize: 1000,
 	})
+
+	if err := client.Ping(ctx).Err(); err != nil {
+		return nil, err
+	}
+
+	return &Redis{client: client}, nil
 }
 
-func Set(client *redis.Client, ctx context.Context, key string, value interface{}, expiration time.Duration) error {
-	if err := client.Set(ctx, key, value, expiration).Err(); err != nil {
+func (r *Redis) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
+	if err := r.client.Set(ctx, key, value, expiration).Err(); err != nil {
 		return err
 	}
 	return nil
 }
 
-func Get(client *redis.Client, ctx context.Context, key string) (interface{}, error) {
-	value, err := client.Get(ctx, key).Result()
+func (r *Redis) Get(ctx context.Context, key string) (interface{}, error) {
+	value, err := r.client.Get(ctx, key).Result()
 	if err != nil {
 		return nil, err
 	}
